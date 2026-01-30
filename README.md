@@ -58,7 +58,15 @@ let g:vim_niri_nav_workspace = "true"
 Then, in your niri config add the `w` parameter to the `vim-niri-nav` command:
 
 ```
-Mod+Down    { spawn "vim-niri-nav" "up" "w"; }
+Mod+Down    { spawn "vim-niri-nav" "down" "w"; }
+```
+
+### niri focus-window-or-monitor-[down|up] support
+
+In your niri config add the `m` parameter to the `vim-niri-nav` command:
+
+```
+Mod+Down    { spawn "vim-niri-nav" "down" "m"; }
 ```
 
 ## Contributing

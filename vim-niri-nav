@@ -7,6 +7,8 @@ dir="$1"
 if [ -n "$2" ]; then
     if [ $2 = "w" ]; then
         custom="or-workspace-"
+    elif [ $2 = "m" ]; then
+        custom="or-monitor-"
     else
         custom=""
     fi 
