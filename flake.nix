@@ -15,6 +15,7 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
+      inherit (pkgs) lib;
       craneLib = crane.mkLib pkgs;
 
       src = craneLib.cleanCargoSource ./rpc;
@@ -26,23 +27,37 @@
 
       cargoArtifacts = craneLib.buildDepsOnly common-args;
 
-      vim-niri-nav = craneLib.buildPackage (common-args
+      bin = craneLib.buildPackage (common-args
         // {
           inherit cargoArtifacts;
         });
 
       plugin = pkgs.vimUtils.buildVimPlugin {
-        pname = "vim-niri-nav";
+        pname = "vim-niri-nav-plugin";
         version = "unstable";
-        src = ./.;
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./plugin
+          ];
+        };
         meta = {
           homepage = "https://github.com/lyndeno/vim-niri-nav";
           hydraPlatforms = [];
         };
       };
+
+      vim-niri-nav = pkgs.symlinkJoin {
+        name = "vim-niri-nav-combined";
+        meta.mainProgram = "vim-niri-nav";
+        paths = [
+          plugin
+          bin
+        ];
+      };
     in {
       packages = {
-        inherit vim-niri-nav plugin;
+        inherit vim-niri-nav plugin bin;
         default = vim-niri-nav;
       };
 
@@ -51,7 +66,6 @@
           rust-analyzer
           clippy
           rustfmt
-          jq
         ];
       };
     });
