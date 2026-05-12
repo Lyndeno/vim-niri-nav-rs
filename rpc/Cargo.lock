@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "vim-niri-nav-rpc"
+name = "vim-niri-nav"
 version = "0.1.0"

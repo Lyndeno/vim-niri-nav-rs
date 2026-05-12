@@ -1,5 +1,5 @@
 {
-  description = "vim-niri-nav helper script and nvim RPC client";
+  description = "vim-niri-nav — navigate niri windows and vim splits with the same keybindings";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -26,7 +26,7 @@
 
       cargoArtifacts = craneLib.buildDepsOnly common-args;
 
-      rpc = craneLib.buildPackage (common-args
+      vim-niri-nav = craneLib.buildPackage (common-args
         // {
           inherit cargoArtifacts;
         });
@@ -35,23 +35,15 @@
         pname = "vim-niri-nav";
         version = "unstable";
         src = ./.;
-        nativeBuildInputs = [pkgs.makeWrapper];
-        postInstall = ''
-          mkdir -p $out/bin
-          cp $out/vim-niri-nav $out/bin/vim-niri-nav
-          wrapProgram $out/bin/vim-niri-nav \
-            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.jq rpc]}
-        '';
         meta = {
           homepage = "https://github.com/lyndeno/vim-niri-nav";
           hydraPlatforms = [];
-          mainProgram = "vim-niri-nav";
         };
       };
     in {
       packages = {
-        inherit rpc plugin;
-        default = plugin;
+        inherit vim-niri-nav plugin;
+        default = vim-niri-nav;
       };
 
       devShells.default = craneLib.devShell {
