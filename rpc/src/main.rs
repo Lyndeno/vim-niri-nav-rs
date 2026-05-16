@@ -7,23 +7,56 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
+use clap::{Parser, ValueEnum};
 
-    let dir = args.get(1).map(String::as_str).unwrap_or("");
-    match dir {
-        "up" | "down" | "left" | "right" => {}
-        _ => {
-            eprintln!("USAGE: {} up|right|down|left [w|m]", args[0]);
-            exit(1);
+#[derive(Parser)]
+#[command(about = "Navigate between vim splits and niri windows")]
+struct Args {
+    direction: Direction,
+    modifier: Option<Modifier>,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl Direction {
+    fn as_str(self) -> &'static str {
+        match self {
+            Direction::Up => "up",
+            Direction::Down => "down",
+            Direction::Left => "left",
+            Direction::Right => "right",
         }
     }
+}
 
-    let custom = match args.get(2).map(String::as_str) {
-        Some("w") => "or-workspace-",
-        Some("m") => "or-monitor-",
-        _ => "",
-    };
+#[derive(ValueEnum, Clone, Copy)]
+enum Modifier {
+    #[value(name = "w")]
+    Workspace,
+    #[value(name = "m")]
+    Monitor,
+}
+
+impl Modifier {
+    fn as_niri_str(self) -> &'static str {
+        match self {
+            Modifier::Workspace => "or-workspace-",
+            Modifier::Monitor => "or-monitor-",
+        }
+    }
+}
+
+fn main() {
+    let args = Args::parse();
+
+    let dir = args.direction.as_str();
+    let custom = args.modifier.map(Modifier::as_niri_str).unwrap_or("");
 
     let timeout = Duration::from_secs_f64(
         env::var("VIM_NIRI_NAV_TIMEOUT")
