@@ -135,9 +135,12 @@ fn focused_pid() -> Option<u32> {
         .args(["msg", "--json", "focused-window"])
         .output()
         .ok()?;
-    let text = std::str::from_utf8(&output.stdout).ok()?;
-    // Parse "pid": <number> without pulling in serde_json
-    let after = text.split("\"pid\":").nth(1)?;
+    parse_focused_pid(std::str::from_utf8(&output.stdout).ok()?)
+}
+
+// Parses "pid": <number> without pulling in serde_json
+fn parse_focused_pid(json: &str) -> Option<u32> {
+    let after = json.split("\"pid\":").nth(1)?;
     after
         .trim_start()
         .split(|c: char| !c.is_ascii_digit())
