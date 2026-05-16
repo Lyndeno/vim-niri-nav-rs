@@ -92,39 +92,39 @@ fn is_servername_file(name: &str) -> bool {
     name.starts_with("vim-niri-nav.") && name.ends_with(".servername")
 }
 
+fn server_for_entry(entry: fs::DirEntry, focused_pid: u32) -> Option<(String, String)> {
+    let name = entry.file_name();
+    let name = name.to_string_lossy();
+
+    if !is_servername_file(&name) {
+        return None;
+    }
+
+    let vim_pid: u32 = name["vim-niri-nav.".len()..name.len() - ".servername".len()].parse().ok()?;
+
+    if !is_descendant(vim_pid, focused_pid) {
+        return None;
+    }
+
+    let content = fs::read_to_string(entry.path()).ok()?;
+    let mut parts = content.trim().splitn(2, ' ');
+    let program = parts.next()?.to_owned();
+    let servername = parts.next().filter(|s| !s.is_empty())?.to_owned();
+
+    Some((program, servername))
+}
+
 fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeout: Duration) -> bool {
-    let entries = match fs::read_dir(runtime_dir) {
-        Ok(e) => e,
-        Err(_) => return false,
+    let Ok(entries) = fs::read_dir(runtime_dir) else {
+        return false;
     };
 
     entries.flatten().find_map(|entry| {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-
-        if !is_servername_file(&name) {
-            return None;
-        }
-
-        let vim_pid: u32 = name["vim-niri-nav.".len()..name.len() - ".servername".len()].parse().ok()?;
-
-        if !is_descendant(vim_pid, focused_pid) {
-            return None;
-        }
-
-        let content = fs::read_to_string(entry.path()).ok()?;
-        let mut parts = content.trim().splitn(2, ' ');
-        let program = parts.next().unwrap_or("");
-        let servername = parts.next().unwrap_or("");
-
-        if servername.is_empty() {
-            return None;
-        }
-
+        let (program, servername) = server_for_entry(entry, focused_pid)?;
         let expr = format!("VimNiriNav('{direction}', 1)");
-        Some(match program {
-            "nvim" => nvim_eval(servername, &expr, timeout) == Some(true),
-            "vim" => vim_remote_expr(servername, &expr, timeout) == Some(true),
+        Some(match program.as_str() {
+            "nvim" => nvim_eval(&servername, &expr, timeout) == Some(true),
+            "vim" => vim_remote_expr(&servername, &expr, timeout) == Some(true),
             _ => false,
         })
     }).unwrap_or(false)
