@@ -223,6 +223,7 @@ fn encode_request(expr: &str) -> Vec<u8> {
 
 fn encode_str(buf: &mut Vec<u8>, s: &str) {
     let bytes = s.as_bytes();
+    debug_assert!(bytes.len() <= 0xFFFF, "msgpack str exceeds 16-bit length");
     match bytes.len() {
         n @ 0..=31 => buf.push(0xa0 | n as u8),
         n @ 32..=255 => {
