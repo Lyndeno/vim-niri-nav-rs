@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -184,20 +184,30 @@ fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
 }
 
 fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bool> {
+    let child = Command::new("vim")
+        .args(["--servername", servername, "--remote-expr", expr])
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    let pid = nix::unistd::Pid::from_raw(child.id() as i32);
     let (tx, rx) = mpsc::channel();
-    let servername = servername.to_string();
-    let expr = expr.to_string();
 
     thread::spawn(move || {
-        let result = Command::new("vim")
-            .args(["--servername", &servername, "--remote-expr", &expr])
-            .output()
+        let result = child
+            .wait_with_output()
             .ok()
             .map(|o| o.stdout.starts_with(b"true"));
         tx.send(result).ok();
     });
 
-    rx.recv_timeout(timeout).ok().flatten()
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
+            None
+        }
+    }
 }
 
 fn encode_request(expr: &str) -> Vec<u8> {
