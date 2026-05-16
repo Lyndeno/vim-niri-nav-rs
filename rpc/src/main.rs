@@ -1,8 +1,9 @@
 use std::env;
+use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::process::{exit, Command};
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -27,21 +28,23 @@ enum Direction {
 }
 
 impl Direction {
-    fn as_str(self) -> &'static str {
+    fn niri_action(self, modifier: Option<Modifier>) -> String {
+        let custom = modifier.map(Modifier::as_niri_str).unwrap_or("");
         match self {
+            Direction::Up | Direction::Down => format!("focus-window-{custom}{self}"),
+            Direction::Left | Direction::Right => format!("focus-column-{self}"),
+        }
+    }
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Direction::Up => "up",
             Direction::Down => "down",
             Direction::Left => "left",
             Direction::Right => "right",
-        }
-    }
-
-    fn niri_action(self, modifier: Option<Modifier>) -> String {
-        let custom = modifier.map(Modifier::as_niri_str).unwrap_or("");
-        match self {
-            Direction::Up | Direction::Down => format!("focus-window-{}{}", custom, self.as_str()),
-            Direction::Left | Direction::Right => format!("focus-column-{}", self.as_str()),
-        }
+        })
     }
 }
 
@@ -79,7 +82,7 @@ fn main() {
         .unwrap_or(false);
 
     if vim_navigated {
-        exit(0);
+        return;
     }
 
     niri_focus(args.direction, args.modifier);
@@ -95,46 +98,36 @@ fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeou
         Err(_) => return false,
     };
 
-    for entry in entries.flatten() {
-        let path = entry.path();
+    entries.flatten().find_map(|entry| {
         let name = entry.file_name();
         let name = name.to_string_lossy();
 
         if !is_servername_file(&name) {
-            continue;
+            return None;
         }
 
-        let vim_pid: u32 = match name["vim-niri-nav.".len()..name.len() - ".servername".len()].parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
+        let vim_pid: u32 = name["vim-niri-nav.".len()..name.len() - ".servername".len()].parse().ok()?;
 
         if !is_descendant(vim_pid, focused_pid) {
-            continue;
+            return None;
         }
 
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
+        let content = fs::read_to_string(entry.path()).ok()?;
         let mut parts = content.trim().splitn(2, ' ');
         let program = parts.next().unwrap_or("");
         let servername = parts.next().unwrap_or("");
 
         if servername.is_empty() {
-            continue;
+            return None;
         }
 
-        let expr = format!("VimNiriNav('{}', 1)", direction.as_str());
-        return match program {
+        let expr = format!("VimNiriNav('{direction}', 1)");
+        Some(match program {
             "nvim" => nvim_eval(servername, &expr, timeout) == Some(true),
             "vim" => vim_remote_expr(servername, &expr, timeout) == Some(true),
             _ => false,
-        };
-    }
-
-    false
+        })
+    }).unwrap_or(false)
 }
 
 fn focused_pid() -> Option<u32> {
@@ -154,27 +147,17 @@ fn focused_pid() -> Option<u32> {
 }
 
 fn ppid(pid: u32) -> Option<u32> {
-    let content = fs::read_to_string(format!("/proc/{}/status", pid)).ok()?;
+    let content = fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
     content.lines().find_map(|line| {
         line.strip_prefix("PPid:")
             .and_then(|v| v.trim().parse().ok())
     })
 }
 
-fn is_descendant(mut pid: u32, ancestor: u32) -> bool {
-    for _ in 0..MAX_ANCESTOR_DEPTH {
-        if pid == ancestor {
-            return true;
-        }
-        if pid <= 1 {
-            return false;
-        }
-        match ppid(pid) {
-            Some(p) => pid = p,
-            None => return false,
-        }
-    }
-    false
+fn is_descendant(pid: u32, ancestor: u32) -> bool {
+    std::iter::successors(Some(pid), |&p| ppid(p))
+        .take(MAX_ANCESTOR_DEPTH as usize)
+        .any(|p| p == ancestor)
 }
 
 fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
