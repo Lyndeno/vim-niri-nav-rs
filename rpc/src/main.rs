@@ -211,7 +211,8 @@ fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bo
 }
 
 fn encode_request(expr: &str) -> Vec<u8> {
-    let mut buf = Vec::new();
+    // 3 type/id bytes + "nvim_eval" (1 header + 9) + 1 array byte + expr (up to 3 header + len)
+    let mut buf = Vec::with_capacity(14 + 3 + expr.len());
     buf.push(0x94); // fixarray(4)
     buf.push(0x00); // request type
     buf.push(0x01); // msgid
