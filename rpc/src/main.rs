@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
+const MAX_ANCESTOR_DEPTH: u32 = 20;
+
 #[derive(Parser)]
 #[command(about = "Navigate between vim splits and niri windows")]
 struct Args {
@@ -33,6 +35,14 @@ impl Direction {
             Direction::Right => "right",
         }
     }
+
+    fn niri_action(self, modifier: Option<Modifier>) -> String {
+        let custom = modifier.map(Modifier::as_niri_str).unwrap_or("");
+        match self {
+            Direction::Up | Direction::Down => format!("focus-window-{}{}", custom, self.as_str()),
+            Direction::Left | Direction::Right => format!("focus-column-{}", self.as_str()),
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -55,9 +65,6 @@ impl Modifier {
 fn main() {
     let args = Args::parse();
 
-    let dir = args.direction.as_str();
-    let custom = args.modifier.map(Modifier::as_niri_str).unwrap_or("");
-
     let timeout = Duration::from_secs_f64(
         env::var("VIM_NIRI_NAV_TIMEOUT")
             .ok()
@@ -67,30 +74,22 @@ fn main() {
 
     let runtime_dir = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
 
-    if has_servername_files(&runtime_dir) {
-        if let Some(focused_pid) = focused_pid() {
-            if try_vim_nav(&runtime_dir, focused_pid, dir, timeout) {
-                exit(0);
-            }
-        }
+    let vim_navigated = focused_pid()
+        .map(|pid| try_vim_nav(&runtime_dir, pid, args.direction, timeout))
+        .unwrap_or(false);
+
+    if vim_navigated {
+        exit(0);
     }
 
-    niri_focus(dir, custom);
-}
-
-fn has_servername_files(runtime_dir: &str) -> bool {
-    fs::read_dir(runtime_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|e| is_servername_file(&e.file_name().to_string_lossy()))
+    niri_focus(args.direction, args.modifier);
 }
 
 fn is_servername_file(name: &str) -> bool {
     name.starts_with("vim-niri-nav.") && name.ends_with(".servername")
 }
 
-fn try_vim_nav(runtime_dir: &str, focused_pid: u32, dir: &str, timeout: Duration) -> bool {
+fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeout: Duration) -> bool {
     let entries = match fs::read_dir(runtime_dir) {
         Ok(e) => e,
         Err(_) => return false,
@@ -116,7 +115,7 @@ fn try_vim_nav(runtime_dir: &str, focused_pid: u32, dir: &str, timeout: Duration
 
         let content = match fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => break,
+            Err(_) => continue,
         };
 
         let mut parts = content.trim().splitn(2, ' ');
@@ -124,10 +123,10 @@ fn try_vim_nav(runtime_dir: &str, focused_pid: u32, dir: &str, timeout: Duration
         let servername = parts.next().unwrap_or("");
 
         if servername.is_empty() {
-            break;
+            continue;
         }
 
-        let expr = format!("VimNiriNav('{}', 1)", dir);
+        let expr = format!("VimNiriNav('{}', 1)", direction.as_str());
         return match program {
             "nvim" => nvim_eval(servername, &expr, timeout) == Some(true),
             "vim" => vim_remote_expr(servername, &expr, timeout) == Some(true),
@@ -163,7 +162,7 @@ fn ppid(pid: u32) -> Option<u32> {
 }
 
 fn is_descendant(mut pid: u32, ancestor: u32) -> bool {
-    for _ in 0..20 {
+    for _ in 0..MAX_ANCESTOR_DEPTH {
         if pid == ancestor {
             return true;
         }
@@ -176,6 +175,13 @@ fn is_descendant(mut pid: u32, ancestor: u32) -> bool {
         }
     }
     false
+}
+
+fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
+    Command::new("niri")
+        .args(["msg", "action", &direction.niri_action(modifier)])
+        .status()
+        .ok();
 }
 
 fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
@@ -206,18 +212,6 @@ fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bo
     });
 
     rx.recv_timeout(timeout).ok().flatten()
-}
-
-fn niri_focus(dir: &str, custom: &str) {
-    let action = match dir {
-        "up" | "down" => format!("focus-window-{}{}", custom, dir),
-        _ => format!("focus-column-{}", dir),
-    };
-
-    Command::new("niri")
-        .args(["msg", "action", &action])
-        .status()
-        .ok();
 }
 
 fn encode_request(expr: &str) -> Vec<u8> {
