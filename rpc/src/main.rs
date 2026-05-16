@@ -1,7 +1,7 @@
 use std::env;
 use std::fmt;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
+use rmpv::{Value, decode, encode};
 
 const MAX_ANCESTOR_DEPTH: u32 = 20;
 
@@ -175,12 +176,26 @@ fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
     stream.set_read_timeout(Some(timeout)).ok()?;
     stream.set_write_timeout(Some(timeout)).ok()?;
 
-    stream.write_all(&encode_request(expr)).ok()?;
+    let request = Value::Array(vec![
+        Value::Integer(0.into()),
+        Value::Integer(1.into()),
+        Value::String("nvim_eval".into()),
+        Value::Array(vec![Value::String(expr.into())]),
+    ]);
 
-    let mut buf = [0u8; 256];
-    let n = stream.read(&mut buf).ok()?;
+    let mut buf = Vec::new();
+    encode::write_value(&mut buf, &request).ok()?;
+    stream.write_all(&buf).ok()?;
 
-    Some(buf[..n].windows(4).any(|w| w == b"true"))
+    // msgpack-rpc response: [type=1, msgid, error, result]
+    let response = decode::read_value(&mut stream).ok()?;
+    let result = response.as_array()?.get(3)?;
+    Some(match result {
+        Value::Boolean(b) => *b,
+        Value::String(s) => s.as_str() == Some("true"),
+        Value::Integer(i) => i.as_i64() != Some(0),
+        _ => false,
+    })
 }
 
 fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bool> {
@@ -208,34 +223,4 @@ fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bo
             None
         }
     }
-}
-
-fn encode_request(expr: &str) -> Vec<u8> {
-    // 3 type/id bytes + "nvim_eval" (1 header + 9) + 1 array byte + expr (up to 3 header + len)
-    let mut buf = Vec::with_capacity(14 + 3 + expr.len());
-    buf.push(0x94); // fixarray(4)
-    buf.push(0x00); // request type
-    buf.push(0x01); // msgid
-    encode_str(&mut buf, "nvim_eval");
-    buf.push(0x91); // fixarray(1)
-    encode_str(&mut buf, expr);
-    buf
-}
-
-fn encode_str(buf: &mut Vec<u8>, s: &str) {
-    let bytes = s.as_bytes();
-    debug_assert!(bytes.len() <= 0xFFFF, "msgpack str exceeds 16-bit length");
-    match bytes.len() {
-        n @ 0..=31 => buf.push(0xa0 | n as u8),
-        n @ 32..=255 => {
-            buf.push(0xd9);
-            buf.push(n as u8);
-        }
-        n => {
-            buf.push(0xda);
-            buf.push((n >> 8) as u8);
-            buf.push(n as u8);
-        }
-    }
-    buf.extend_from_slice(bytes);
 }
