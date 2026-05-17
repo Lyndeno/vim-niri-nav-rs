@@ -19,7 +19,7 @@
     crane,
     pre-commit-hooks-nix,
   }:
-    flake-utils.lib.eachDefaultSystem (system: let
+    flake-utils.lib.eachSystem (builtins.filter (s: builtins.match ".*-linux" s != null) flake-utils.lib.defaultSystems) (system: let
       pkgs = nixpkgs.legacyPackages.${system};
       inherit (pkgs) lib;
       craneLib = crane.mkLib pkgs;
