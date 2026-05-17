@@ -231,6 +231,122 @@ fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_is_servername_file_valid() {
+        assert!(is_servername_file("vim-niri-nav.123.servername"));
+        assert!(is_servername_file("vim-niri-nav.99999.servername"));
+    }
+
+    #[test]
+    fn test_is_servername_file_invalid() {
+        assert!(!is_servername_file("other.123.servername"));
+        assert!(!is_servername_file("vim-niri-nav.123.txt"));
+        assert!(!is_servername_file("VIM-niri-nav.123.servername"));
+    }
+
+    #[cfg(not(feature = "niri-ipc"))]
+    #[test]
+    fn test_parse_focused_pid_valid() {
+        let json = r#"{"id":1,"app_id":"alacritty","pid":12345}"#;
+        assert_eq!(parse_focused_pid(json), Some(12345));
+    }
+
+    #[cfg(not(feature = "niri-ipc"))]
+    #[test]
+    fn test_parse_focused_pid_with_spaces() {
+        assert_eq!(parse_focused_pid(r#"{"pid": 99}"#), Some(99));
+    }
+
+    #[cfg(not(feature = "niri-ipc"))]
+    #[test]
+    fn test_parse_focused_pid_missing() {
+        assert_eq!(parse_focused_pid("{}"), None);
+    }
+
+    #[test]
+    fn test_server_for_entry_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid = std::process::id();
+        let filename = format!("vim-niri-nav.{pid}.servername");
+        fs::write(dir.path().join(&filename), "nvim /tmp/nvim.sock").unwrap();
+
+        let entry = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap();
+
+        assert_eq!(
+            server_for_entry(entry, pid),
+            Some(("nvim".to_owned(), "/tmp/nvim.sock".to_owned()))
+        );
+    }
+
+    #[test]
+    fn test_server_for_entry_wrong_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("not-a-match.txt"), "nvim /tmp/nvim.sock").unwrap();
+
+        let entry = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap();
+
+        assert_eq!(server_for_entry(entry, 1), None);
+    }
+
+    #[test]
+    fn test_server_for_entry_unrelated_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        // PID 1 is init/systemd — not a descendant of the test process
+        fs::write(dir.path().join("vim-niri-nav.1.servername"), "nvim /tmp/nvim.sock").unwrap();
+
+        let entry = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap();
+
+        assert_eq!(server_for_entry(entry, std::process::id()), None);
+    }
+
+    #[cfg(feature = "niri-ipc")]
+    #[test]
+    fn test_direction_niri_action_up() {
+        use niri_ipc::Action;
+        assert!(matches!(Direction::Up.niri_action(None), Action::FocusWindowUp {}));
+        assert!(matches!(Direction::Up.niri_action(Some(Modifier::Workspace)), Action::FocusWindowOrWorkspaceUp {}));
+        assert!(matches!(Direction::Up.niri_action(Some(Modifier::Monitor)), Action::FocusWindowOrMonitorUp {}));
+    }
+
+    #[cfg(feature = "niri-ipc")]
+    #[test]
+    fn test_direction_niri_action_down() {
+        use niri_ipc::Action;
+        assert!(matches!(Direction::Down.niri_action(None), Action::FocusWindowDown {}));
+        assert!(matches!(Direction::Down.niri_action(Some(Modifier::Workspace)), Action::FocusWindowOrWorkspaceDown {}));
+        assert!(matches!(Direction::Down.niri_action(Some(Modifier::Monitor)), Action::FocusWindowOrMonitorDown {}));
+    }
+
+    #[cfg(feature = "niri-ipc")]
+    #[test]
+    fn test_direction_niri_action_left_right_ignore_modifier() {
+        use niri_ipc::Action;
+        assert!(matches!(Direction::Left.niri_action(None), Action::FocusColumnLeft {}));
+        assert!(matches!(Direction::Left.niri_action(Some(Modifier::Monitor)), Action::FocusColumnLeft {}));
+        assert!(matches!(Direction::Left.niri_action(Some(Modifier::Workspace)), Action::FocusColumnLeft {}));
+        assert!(matches!(Direction::Right.niri_action(None), Action::FocusColumnRight {}));
+        assert!(matches!(Direction::Right.niri_action(Some(Modifier::Monitor)), Action::FocusColumnRight {}));
+        assert!(matches!(Direction::Right.niri_action(Some(Modifier::Workspace)), Action::FocusColumnRight {}));
+    }
+}
+
 fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bool> {
     let child = Command::new("vim")
         .args(["--servername", servername, "--remote-expr", expr])
