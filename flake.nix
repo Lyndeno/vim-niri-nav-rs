@@ -37,6 +37,7 @@
             --bash ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.bash \
             --fish ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.fish \
             --zsh ./target/release/build/vim-niri-nav-*/out/_vim-niri-nav
+          installManPage ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.1
         '';
       };
 
