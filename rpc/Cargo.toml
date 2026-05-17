@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+niri-ipc = "26.4.0"
 nix = { version = "0.29", features = ["signal"] }
 rmpv = "1"
 

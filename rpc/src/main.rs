@@ -9,6 +9,8 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
+use niri_ipc::socket::Socket;
+use niri_ipc::{Action, Request, Response};
 use rmpv::{Value, decode, encode};
 
 const MAX_ANCESTOR_DEPTH: u32 = 20;
@@ -29,11 +31,16 @@ enum Direction {
 }
 
 impl Direction {
-    fn niri_action(self, modifier: Option<Modifier>) -> String {
-        let custom = modifier.map(Modifier::as_niri_str).unwrap_or("");
-        match self {
-            Direction::Up | Direction::Down => format!("focus-window-{custom}{self}"),
-            Direction::Left | Direction::Right => format!("focus-column-{self}"),
+    fn niri_action(self, modifier: Option<Modifier>) -> Action {
+        match (self, modifier) {
+            (Direction::Up, None) => Action::FocusWindowUp {},
+            (Direction::Up, Some(Modifier::Workspace)) => Action::FocusWindowOrWorkspaceUp {},
+            (Direction::Up, Some(Modifier::Monitor)) => Action::FocusWindowOrMonitorUp {},
+            (Direction::Down, None) => Action::FocusWindowDown {},
+            (Direction::Down, Some(Modifier::Workspace)) => Action::FocusWindowOrWorkspaceDown {},
+            (Direction::Down, Some(Modifier::Monitor)) => Action::FocusWindowOrMonitorDown {},
+            (Direction::Left, _) => Action::FocusColumnLeft {},
+            (Direction::Right, _) => Action::FocusColumnRight {},
         }
     }
 }
@@ -57,14 +64,6 @@ enum Modifier {
     Monitor,
 }
 
-impl Modifier {
-    fn as_niri_str(self) -> &'static str {
-        match self {
-            Modifier::Workspace => "or-workspace-",
-            Modifier::Monitor => "or-monitor-",
-        }
-    }
-}
 
 fn main() {
     let args = Args::parse();
@@ -132,22 +131,11 @@ fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeou
 }
 
 fn focused_pid() -> Option<u32> {
-    let output = Command::new("niri")
-        .args(["msg", "--json", "focused-window"])
-        .output()
-        .ok()?;
-    parse_focused_pid(std::str::from_utf8(&output.stdout).ok()?)
-}
-
-// Parses "pid": <number> without pulling in serde_json
-fn parse_focused_pid(json: &str) -> Option<u32> {
-    let after = json.split("\"pid\":").nth(1)?;
-    after
-        .trim_start()
-        .split(|c: char| !c.is_ascii_digit())
-        .next()?
-        .parse()
-        .ok()
+    let mut socket = Socket::connect().ok()?;
+    match socket.send(Request::FocusedWindow).ok()?.ok()? {
+        Response::FocusedWindow(w) => u32::try_from(w?.pid?).ok(),
+        _ => None,
+    }
 }
 
 fn ppid(pid: u32) -> Option<u32> {
@@ -165,10 +153,8 @@ fn is_descendant(pid: u32, ancestor: u32) -> bool {
 }
 
 fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
-    Command::new("niri")
-        .args(["msg", "action", &direction.niri_action(modifier)])
-        .status()
-        .ok();
+    let Ok(mut socket) = Socket::connect() else { return };
+    let _ = socket.send(Request::Action(direction.niri_action(modifier)));
 }
 
 fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
