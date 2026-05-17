@@ -5,6 +5,11 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
+
+    pre-commit-hooks-nix = {
+      url = "github:cachix/pre-commit-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -12,6 +17,7 @@
     nixpkgs,
     flake-utils,
     crane,
+    pre-commit-hooks-nix,
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
@@ -55,18 +61,57 @@
           bin
         ];
       };
+
+      pre-commit-check = hooks:
+        pre-commit-hooks-nix.lib.${system}.run {
+          src = ./.;
+          inherit hooks;
+        };
     in {
       packages = {
         inherit vim-niri-nav plugin bin;
         default = vim-niri-nav;
       };
 
-      devShells.default = craneLib.devShell {
-        packages = with pkgs; [
-          rust-analyzer
-          clippy
-          rustfmt
-        ];
+      checks = {
+        inherit bin;
+
+        vim-niri-nav-clippy = craneLib.cargoClippy (common-args
+          // {
+            inherit cargoArtifacts;
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          });
+
+        vim-niri-nav-fmt = craneLib.cargoFmt {
+          inherit src;
+        };
+
+        vim-niri-nav-test = craneLib.cargoTest (common-args
+          // {
+            inherit cargoArtifacts;
+          });
+
+        pre-commit-check = pre-commit-check {
+          alejandra.enable = true;
+        };
       };
+
+      devShells.default = let
+        hooks = pre-commit-check {
+          alejandra.enable = true;
+          rustfmt.enable = true;
+          clippy.enable = true;
+        };
+      in
+        craneLib.devShell {
+          packages = with pkgs; [
+            rust-analyzer
+            clippy
+            rustfmt
+          ];
+          shellHook = ''
+            ${hooks.shellHook}
+          '';
+        };
     });
 }
