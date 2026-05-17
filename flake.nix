@@ -29,6 +29,15 @@
       common-args = {
         inherit src;
         strictDeps = true;
+
+        nativeBuildInputs = [pkgs.installShellFiles];
+
+        postInstall = ''
+          installShellCompletion --cmd vim-niri-nav \
+            --bash ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.bash \
+            --fish ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.fish \
+            --zsh ./target/release/build/vim-niri-nav-*/out/_vim-niri-nav
+        '';
       };
 
       cargoArtifacts = craneLib.buildDepsOnly common-args;

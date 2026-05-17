@@ -8,7 +8,10 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+mod args;
+use args::{Args, Direction, Modifier};
+use clap::Parser;
+
 #[cfg(feature = "niri-ipc")]
 use niri_ipc::socket::Socket;
 #[cfg(feature = "niri-ipc")]
@@ -16,21 +19,6 @@ use niri_ipc::{Action, Request, Response};
 use rmpv::{decode, encode, Value};
 
 const MAX_ANCESTOR_DEPTH: u32 = 20;
-
-#[derive(Parser)]
-#[command(about = "Navigate between vim splits and niri windows")]
-struct Args {
-    direction: Direction,
-    modifier: Option<Modifier>,
-}
-
-#[derive(ValueEnum, Clone, Copy)]
-enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
 
 #[cfg(feature = "niri-ipc")]
 impl Direction {
@@ -57,14 +45,6 @@ impl fmt::Display for Direction {
             Direction::Right => "right",
         })
     }
-}
-
-#[derive(ValueEnum, Clone, Copy)]
-enum Modifier {
-    #[value(name = "w")]
-    Workspace,
-    #[value(name = "m")]
-    Monitor,
 }
 
 #[cfg(not(feature = "niri-ipc"))]
