@@ -1,74 +1,128 @@
 # vim-niri-nav
 
-**[https://github.com/andergrim/vim-niri-nav](https://github.com/andergrim/vim-niri-nav)**
+Seamless navigation between [niri](https://github.com/YaLTeR/niri) windows and (Neo)Vim splits using the same keybindings.
 
-Seamless navigation between [niri](https://github.com/YaLTeR/niri) windows and (Neo)Vim splits with the same key bindings.
+Forked from [andergrim/vim-niri-nav](https://github.com/andergrim/vim-niri-nav), which was modified from [vim-sway-nav](https://jasoncarloscox.com/creations/vim-sway-nav/), inspired by [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator).
 
-This is a modified version of [vim-sway-nav](https://jasoncarloscox.com/creations/vim-sway-nav/) which
-in turn was inspired by [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator).
+## How it works
+
+A small Rust binary talks directly to the niri IPC socket to find the focused window. If the focused window is running Vim or Neovim, it attempts to navigate within the editor first. If the cursor is already at the edge of the splits, or no editor is focused, it falls back to a normal niri focus action.
 
 ## Requirements
 
-- Vim built with `+clientserver` (check with `vim --version`), or Neovim
-- [jq](https://github.com/stedolan/jq)
-- (optional) [`timeout` from the GNU coreutils](https://www.gnu.org/software/coreutils/timeout) -- see the _Configuration_ section below
+- Vim built with `+clientserver` (`vim --version | grep clientserver`), or Neovim
+- niri running (the binary communicates via `$NIRI_SOCKET`)
 
 ## Installation
 
-First, install this repository as a Vim plugin. For example, if you use [vim-plug](https://github.com/junegunn/vim-plug):
+### Nix flake (recommended)
 
-```
-Plug 'https://github.com/andergrim/vim-niri-nav'
-```
+The flake exposes three packages:
 
-Second, add a symbolic link to the `vim-niri-nav` shell script somewhere on your `$PATH`. Where the script is found depends on how you installed the plugin, but adding a link should look something like the following:
+| Package | Contents |
+|---------|----------|
+| `vim-niri-nav` *(default)* | Binary + Vim plugin combined |
+| `bin` | Rust binary only |
+| `plugin` | Vim plugin only |
 
-```
-ln -s ~/path/to/vim-niri-nav/vim-niri-nav ~/.local/bin/vim-niri-nav
-```
+Add the flake as an input:
 
-Finally, modify your niri config to use `vim-niri-nav` instead of your normal `focus-column-left`, `focus-window-down`, etc. bindings:
-
-```
-Mod+Left      { spawn "vim-niri-nav" "left"; }
-Mod+Down      { spawn "vim-niri-nav" "down"; }
-Mod+Up        { spawn "vim-niri-nav" "up"; }
-Mod+Right     { spawn "vim-niri-nav" "right"; }
+```nix
+inputs.vim-niri-nav.url = "github:lyndeno/vim-niri-nav-rs";
 ```
 
-You can now use `Mod+<arrow>` to navigate among niri windows and Vim splits!
+#### NixOS / Home Manager
 
+To install the combined package (binary on `$PATH` + plugin available to your editor):
+
+```nix
+environment.systemPackages = [
+  inputs.vim-niri-nav.packages.${system}.default
+];
+```
+
+Or split them if your editor config manages plugins separately:
+
+```nix
+# Binary
+environment.systemPackages = [
+  inputs.vim-niri-nav.packages.${system}.bin
+];
+
+# Plugin (example with Home Manager + Neovim)
+programs.neovim.plugins = [
+  inputs.vim-niri-nav.packages.${system}.plugin
+];
+```
+
+#### niri IPC compatibility
+
+The binary communicates with niri directly via its IPC socket by default. If you are running a version of niri that is incompatible with the bundled `niri-ipc` crate, you can build the fallback version which shells out to `niri msg` instead:
+
+```nix
+inputs.vim-niri-nav.packages.${system}.default.override {
+  cargoExtraArgs = "--no-default-features";
+}
+```
+
+### Manual
+
+Build the binary and place it on your `$PATH`:
+
+```sh
+cargo build --release --manifest-path rpc/Cargo.toml
+cp rpc/target/release/vim-niri-nav ~/.local/bin/
+```
+
+Then install the Vim plugin from the `plugin/` directory using your plugin manager. For example with [vim-plug](https://github.com/junegunn/vim-plug):
+
+```vim
+Plug 'lyndeno/vim-niri-nav-rs'
+```
+
+## niri configuration
+
+Replace your normal focus bindings with `vim-niri-nav`:
+
+```kdl
+Mod+Left  { spawn "vim-niri-nav" "left"; }
+Mod+Down  { spawn "vim-niri-nav" "down"; }
+Mod+Up    { spawn "vim-niri-nav" "up"; }
+Mod+Right { spawn "vim-niri-nav" "right"; }
+```
+
+### Workspace traversal
+
+Pass `w` as a second argument to fall through to `focus-window-or-workspace-[up|down]` when at the edge of niri windows:
+
+```kdl
+Mod+Down { spawn "vim-niri-nav" "down" "w"; }
+Mod+Up   { spawn "vim-niri-nav" "up"   "w"; }
+```
+
+### Monitor traversal
+
+Pass `m` to fall through to `focus-window-or-monitor-[up|down]` or `focus-column-or-monitor-[left|right]`:
+
+```kdl
+Mod+Left  { spawn "vim-niri-nav" "left"  "m"; }
+Mod+Down  { spawn "vim-niri-nav" "down"  "m"; }
+Mod+Up    { spawn "vim-niri-nav" "up"    "m"; }
+Mod+Right { spawn "vim-niri-nav" "right" "m"; }
+```
 
 ## Configuration
 
-The `vim-niri-nav` shell script applies a timeout to its communication with (Neo)Vim and falls back to normal `niri msg action focus-<type + direction>` commands if the timeout is exceeded. This is useful in cases where (Neo)Vim is blocked on some long-running operation and takes a long time to respond -- better to at least move to the adjacent niri window than to do nothing.
+### Timeout
 
-The timeout is implemented using the [`timeout` program from the GNU coreutils](https://www.gnu.org/software/coreutils/timeout). If the `timeout` program is not available, no timeout will be applied. The default timeout is `0.1s` (1/10th of a second), but this can be overridden by setting the `VIM_NIRI_NAV_TIMEOUT` environment variable. Setting this variable to `0` will disable the timeout behavior, allowing (Neo)Vim to be as slow as it wants to be.
+The binary applies a timeout when communicating with Vim/Neovim, falling back to a niri focus action if the editor does not respond in time. The default is `0.1s`. Override it with the `VIM_NIRI_NAV_TIMEOUT` environment variable (value in seconds):
 
-### niri focus-window-or-workspace-[down|up] support
-
-If you want to use `focus-window-or-workspace-[down|up]` instead of `focus-window-[down|up]`:
-
-Set `g:vim_niri_nav_workspace` to `"true"` in your vim configuration:
-
-```
-let g:vim_niri_nav_workspace = "true"
-```
-
-Then, in your niri config add the `w` parameter to the `vim-niri-nav` command:
-
-```
-Mod+Down    { spawn "vim-niri-nav" "down" "w"; }
-```
-
-### niri focus-window-or-monitor-[down|up] support
-
-In your niri config add the `m` parameter to the `vim-niri-nav` command:
-
-```
-Mod+Down    { spawn "vim-niri-nav" "down" "m"; }
+```sh
+# In your shell profile or niri environment config
+export VIM_NIRI_NAV_TIMEOUT=0.2   # 200ms
+export VIM_NIRI_NAV_TIMEOUT=0     # disable timeout
 ```
 
 ## Contributing
 
-Contributions are welcome! You can send questions, bug reports, and pull requests through Github.
+Contributions are welcome. Bug reports and pull requests can be sent through GitHub.
