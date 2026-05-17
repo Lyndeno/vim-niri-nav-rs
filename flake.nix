@@ -24,7 +24,7 @@
       inherit (pkgs) lib;
       craneLib = crane.mkLib pkgs;
 
-      src = craneLib.cleanCargoSource ./rpc;
+      src = craneLib.cleanCargoSource ./.;
 
       common-args = {
         inherit src;

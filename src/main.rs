@@ -13,7 +13,7 @@ use clap::{Parser, ValueEnum};
 use niri_ipc::socket::Socket;
 #[cfg(feature = "niri-ipc")]
 use niri_ipc::{Action, Request, Response};
-use rmpv::{Value, decode, encode};
+use rmpv::{decode, encode, Value};
 
 const MAX_ANCESTOR_DEPTH: u32 = 20;
 
@@ -112,7 +112,9 @@ fn server_for_entry(entry: fs::DirEntry, focused_pid: u32) -> Option<(String, St
         return None;
     }
 
-    let vim_pid: u32 = name["vim-niri-nav.".len()..name.len() - ".servername".len()].parse().ok()?;
+    let vim_pid: u32 = name["vim-niri-nav.".len()..name.len() - ".servername".len()]
+        .parse()
+        .ok()?;
 
     if !is_descendant(vim_pid, focused_pid) {
         return None;
@@ -126,20 +128,28 @@ fn server_for_entry(entry: fs::DirEntry, focused_pid: u32) -> Option<(String, St
     Some((program, servername))
 }
 
-fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeout: Duration) -> bool {
+fn try_vim_nav(
+    runtime_dir: &str,
+    focused_pid: u32,
+    direction: Direction,
+    timeout: Duration,
+) -> bool {
     let Ok(entries) = fs::read_dir(runtime_dir) else {
         return false;
     };
 
-    entries.flatten().find_map(|entry| {
-        let (program, servername) = server_for_entry(entry, focused_pid)?;
-        let expr = format!("VimNiriNav('{direction}', 1)");
-        Some(match program.as_str() {
-            "nvim" => nvim_eval(&servername, &expr, timeout) == Some(true),
-            "vim" => vim_remote_expr(&servername, &expr, timeout) == Some(true),
-            _ => false,
+    entries
+        .flatten()
+        .find_map(|entry| {
+            let (program, servername) = server_for_entry(entry, focused_pid)?;
+            let expr = format!("VimNiriNav('{direction}', 1)");
+            Some(match program.as_str() {
+                "nvim" => nvim_eval(&servername, &expr, timeout) == Some(true),
+                "vim" => vim_remote_expr(&servername, &expr, timeout) == Some(true),
+                _ => false,
+            })
         })
-    }).unwrap_or(false)
+        .unwrap_or(false)
 }
 
 #[cfg(feature = "niri-ipc")]
@@ -187,7 +197,9 @@ fn is_descendant(pid: u32, ancestor: u32) -> bool {
 
 #[cfg(feature = "niri-ipc")]
 fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
-    let Ok(mut socket) = Socket::connect() else { return };
+    let Ok(mut socket) = Socket::connect() else {
+        return;
+    };
     let _ = socket.send(Request::Action(direction.niri_action(modifier)));
 }
 
@@ -275,11 +287,7 @@ mod tests {
         let filename = format!("vim-niri-nav.{pid}.servername");
         fs::write(dir.path().join(&filename), "nvim /tmp/nvim.sock").unwrap();
 
-        let entry = fs::read_dir(dir.path())
-            .unwrap()
-            .flatten()
-            .next()
-            .unwrap();
+        let entry = fs::read_dir(dir.path()).unwrap().flatten().next().unwrap();
 
         assert_eq!(
             server_for_entry(entry, pid),
@@ -292,11 +300,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("not-a-match.txt"), "nvim /tmp/nvim.sock").unwrap();
 
-        let entry = fs::read_dir(dir.path())
-            .unwrap()
-            .flatten()
-            .next()
-            .unwrap();
+        let entry = fs::read_dir(dir.path()).unwrap().flatten().next().unwrap();
 
         assert_eq!(server_for_entry(entry, 1), None);
     }
@@ -305,13 +309,13 @@ mod tests {
     fn test_server_for_entry_unrelated_pid() {
         let dir = tempfile::tempdir().unwrap();
         // PID 1 is init/systemd — not a descendant of the test process
-        fs::write(dir.path().join("vim-niri-nav.1.servername"), "nvim /tmp/nvim.sock").unwrap();
+        fs::write(
+            dir.path().join("vim-niri-nav.1.servername"),
+            "nvim /tmp/nvim.sock",
+        )
+        .unwrap();
 
-        let entry = fs::read_dir(dir.path())
-            .unwrap()
-            .flatten()
-            .next()
-            .unwrap();
+        let entry = fs::read_dir(dir.path()).unwrap().flatten().next().unwrap();
 
         assert_eq!(server_for_entry(entry, std::process::id()), None);
     }
@@ -320,30 +324,66 @@ mod tests {
     #[test]
     fn test_direction_niri_action_up() {
         use niri_ipc::Action;
-        assert!(matches!(Direction::Up.niri_action(None), Action::FocusWindowUp {}));
-        assert!(matches!(Direction::Up.niri_action(Some(Modifier::Workspace)), Action::FocusWindowOrWorkspaceUp {}));
-        assert!(matches!(Direction::Up.niri_action(Some(Modifier::Monitor)), Action::FocusWindowOrMonitorUp {}));
+        assert!(matches!(
+            Direction::Up.niri_action(None),
+            Action::FocusWindowUp {}
+        ));
+        assert!(matches!(
+            Direction::Up.niri_action(Some(Modifier::Workspace)),
+            Action::FocusWindowOrWorkspaceUp {}
+        ));
+        assert!(matches!(
+            Direction::Up.niri_action(Some(Modifier::Monitor)),
+            Action::FocusWindowOrMonitorUp {}
+        ));
     }
 
     #[cfg(feature = "niri-ipc")]
     #[test]
     fn test_direction_niri_action_down() {
         use niri_ipc::Action;
-        assert!(matches!(Direction::Down.niri_action(None), Action::FocusWindowDown {}));
-        assert!(matches!(Direction::Down.niri_action(Some(Modifier::Workspace)), Action::FocusWindowOrWorkspaceDown {}));
-        assert!(matches!(Direction::Down.niri_action(Some(Modifier::Monitor)), Action::FocusWindowOrMonitorDown {}));
+        assert!(matches!(
+            Direction::Down.niri_action(None),
+            Action::FocusWindowDown {}
+        ));
+        assert!(matches!(
+            Direction::Down.niri_action(Some(Modifier::Workspace)),
+            Action::FocusWindowOrWorkspaceDown {}
+        ));
+        assert!(matches!(
+            Direction::Down.niri_action(Some(Modifier::Monitor)),
+            Action::FocusWindowOrMonitorDown {}
+        ));
     }
 
     #[cfg(feature = "niri-ipc")]
     #[test]
     fn test_direction_niri_action_left_right_ignore_modifier() {
         use niri_ipc::Action;
-        assert!(matches!(Direction::Left.niri_action(None), Action::FocusColumnLeft {}));
-        assert!(matches!(Direction::Left.niri_action(Some(Modifier::Monitor)), Action::FocusColumnLeft {}));
-        assert!(matches!(Direction::Left.niri_action(Some(Modifier::Workspace)), Action::FocusColumnLeft {}));
-        assert!(matches!(Direction::Right.niri_action(None), Action::FocusColumnRight {}));
-        assert!(matches!(Direction::Right.niri_action(Some(Modifier::Monitor)), Action::FocusColumnRight {}));
-        assert!(matches!(Direction::Right.niri_action(Some(Modifier::Workspace)), Action::FocusColumnRight {}));
+        assert!(matches!(
+            Direction::Left.niri_action(None),
+            Action::FocusColumnLeft {}
+        ));
+        assert!(matches!(
+            Direction::Left.niri_action(Some(Modifier::Monitor)),
+            Action::FocusColumnLeft {}
+        ));
+        assert!(matches!(
+            Direction::Left.niri_action(Some(Modifier::Workspace)),
+            Action::FocusColumnLeft {}
+        ));
+        assert!(matches!(
+            Direction::Right.niri_action(None),
+            Action::FocusColumnRight {}
+        ));
+        assert!(matches!(
+            Direction::Right.niri_action(Some(Modifier::Monitor)),
+            Action::FocusColumnRight {}
+        ));
+        assert!(matches!(
+            Direction::Right.niri_action(Some(Modifier::Workspace)),
+            Action::FocusColumnRight {}
+        ));
     }
 }
 
