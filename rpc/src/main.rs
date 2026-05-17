@@ -9,7 +9,9 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
+#[cfg(feature = "niri-ipc")]
 use niri_ipc::socket::Socket;
+#[cfg(feature = "niri-ipc")]
 use niri_ipc::{Action, Request, Response};
 use rmpv::{Value, decode, encode};
 
@@ -30,6 +32,7 @@ enum Direction {
     Right,
 }
 
+#[cfg(feature = "niri-ipc")]
 impl Direction {
     fn niri_action(self, modifier: Option<Modifier>) -> Action {
         match (self, modifier) {
@@ -64,6 +67,15 @@ enum Modifier {
     Monitor,
 }
 
+#[cfg(not(feature = "niri-ipc"))]
+impl Modifier {
+    fn as_niri_str(self) -> &'static str {
+        match self {
+            Modifier::Workspace => "or-workspace-",
+            Modifier::Monitor => "or-monitor-",
+        }
+    }
+}
 
 fn main() {
     let args = Args::parse();
@@ -130,12 +142,33 @@ fn try_vim_nav(runtime_dir: &str, focused_pid: u32, direction: Direction, timeou
     }).unwrap_or(false)
 }
 
+#[cfg(feature = "niri-ipc")]
 fn focused_pid() -> Option<u32> {
     let mut socket = Socket::connect().ok()?;
     match socket.send(Request::FocusedWindow).ok()?.ok()? {
         Response::FocusedWindow(w) => u32::try_from(w?.pid?).ok(),
         _ => None,
     }
+}
+
+#[cfg(not(feature = "niri-ipc"))]
+fn focused_pid() -> Option<u32> {
+    let output = Command::new("niri")
+        .args(["msg", "--json", "focused-window"])
+        .output()
+        .ok()?;
+    parse_focused_pid(std::str::from_utf8(&output.stdout).ok()?)
+}
+
+#[cfg(not(feature = "niri-ipc"))]
+fn parse_focused_pid(json: &str) -> Option<u32> {
+    let after = json.split("\"pid\":").nth(1)?;
+    after
+        .trim_start()
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
 }
 
 fn ppid(pid: u32) -> Option<u32> {
@@ -152,9 +185,23 @@ fn is_descendant(pid: u32, ancestor: u32) -> bool {
         .any(|p| p == ancestor)
 }
 
+#[cfg(feature = "niri-ipc")]
 fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
     let Ok(mut socket) = Socket::connect() else { return };
     let _ = socket.send(Request::Action(direction.niri_action(modifier)));
+}
+
+#[cfg(not(feature = "niri-ipc"))]
+fn niri_focus(direction: Direction, modifier: Option<Modifier>) {
+    let custom = modifier.map(Modifier::as_niri_str).unwrap_or("");
+    let action = match direction {
+        Direction::Up | Direction::Down => format!("focus-window-{custom}{direction}"),
+        Direction::Left | Direction::Right => format!("focus-column-{direction}"),
+    };
+    Command::new("niri")
+        .args(["msg", "action", &action])
+        .status()
+        .ok();
 }
 
 fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
