@@ -243,6 +243,33 @@ fn nvim_eval(socket_path: &str, expr: &str, timeout: Duration) -> Option<bool> {
     })
 }
 
+fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bool> {
+    let child = Command::new("vim")
+        .args(["--servername", servername, "--remote-expr", expr])
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    let pid = nix::unistd::Pid::from_raw(child.id() as i32);
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = child
+            .wait_with_output()
+            .ok()
+            .map(|o| o.stdout.starts_with(b"true"));
+        tx.send(result).ok();
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,32 +411,5 @@ mod tests {
             Direction::Right.niri_action(Some(Modifier::Workspace)),
             Action::FocusColumnRight {}
         ));
-    }
-}
-
-fn vim_remote_expr(servername: &str, expr: &str, timeout: Duration) -> Option<bool> {
-    let child = Command::new("vim")
-        .args(["--servername", servername, "--remote-expr", expr])
-        .stdout(Stdio::piped())
-        .spawn()
-        .ok()?;
-
-    let pid = nix::unistd::Pid::from_raw(child.id() as i32);
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        let result = child
-            .wait_with_output()
-            .ok()
-            .map(|o| o.stdout.starts_with(b"true"));
-        tx.send(result).ok();
-    });
-
-    match rx.recv_timeout(timeout) {
-        Ok(result) => result,
-        Err(_) => {
-            let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
-            None
-        }
     }
 }
