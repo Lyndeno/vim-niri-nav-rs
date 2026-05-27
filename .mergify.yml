@@ -1,39 +1,21 @@
 pull_request_rules:
-  - name: Automatically merge successful flake updates
-    conditions:
-      - author=Lyndeno
-      - or:
-        - title=Update flake.lock
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:packages.x86_64-linux.vim-niri-nav"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-clippy"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-fmt"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-test"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.pre-commit-check"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:devShells.x86_64-linux.default"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:packages.aarch64-linux.vim-niri-nav"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-clippy"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-fmt"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-test"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.pre-commit-check"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:devShells.aarch64-linux.default"
-    actions:
-      merge:
-        method: merge
-  - name: Automatically merge dependabot updates
-    conditions:
-      - author=dependabot[bot]
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:packages.x86_64-linux.vim-niri-nav"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-clippy"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-fmt"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.vim-niri-nav-test"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.x86_64-linux.pre-commit-check"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:devShells.x86_64-linux.default"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:packages.aarch64-linux.vim-niri-nav"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-clippy"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-fmt"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.vim-niri-nav-test"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:checks.aarch64-linux.pre-commit-check"
-      - "check-success*=ci/hydra:vim-niri-nav-rs:*:devShells.aarch64-linux.default"
-    actions:
-      merge:
-        method: merge
+- actions:
+    merge:
+      method: merge
+  conditions:
+  - author=dependabot[bot]
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.bin
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.hydra-spec
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.mergify-check
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.pre-commit-check
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.vim-niri-nav-clippy
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.vim-niri-nav-fmt
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:aarch64-linux.vim-niri-nav-test
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.bin
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.hydra-spec
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.mergify-check
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.pre-commit-check
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.vim-niri-nav-clippy
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.vim-niri-nav-fmt
+  - check-success*=ci/hydra:vim-niri-nav-rs:*:x86_64-linux.vim-niri-nav-test
+  name: Automatically merge dependabot updates

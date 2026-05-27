@@ -10,6 +10,9 @@
       url = "github:cachix/pre-commit-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    ci.url = "github:Lyndeno/ci";
+    ci.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
@@ -18,6 +21,7 @@
     flake-utils,
     crane,
     pre-commit-hooks-nix,
+    ci,
   }:
     flake-utils.lib.eachSystem (builtins.filter (s: builtins.match ".*-linux" s != null) flake-utils.lib.defaultSystems) (system: let
       pkgs = nixpkgs.legacyPackages.${system};
@@ -81,6 +85,16 @@
       packages = {
         inherit vim-niri-nav plugin bin;
         default = vim-niri-nav;
+        hydra-spec = ci.lib.mkHydraSpec {
+          inherit pkgs;
+          owner = "Lyndeno";
+          repo = "vim-niri-nav-rs";
+        };
+        mergify = ci.lib.mkMergifyConfig {
+          inherit pkgs;
+          projectName = "vim-niri-nav-rs";
+          checks = self.checks;
+        };
       };
 
       checks = {
@@ -103,6 +117,18 @@
 
         pre-commit-check = pre-commit-check {
           alejandra.enable = true;
+        };
+
+        hydra-spec = ci.lib.mkHydraCheck {
+          inherit pkgs;
+          specPackage = self.packages.${system}.hydra-spec;
+          specFile = ./.hydra/spec.json;
+        };
+
+        mergify-check = ci.lib.mkMergifyCheck {
+          inherit pkgs;
+          mergifyPackage = self.packages.${system}.mergify;
+          mergifyFile = ./.mergify.yml;
         };
       };
 
