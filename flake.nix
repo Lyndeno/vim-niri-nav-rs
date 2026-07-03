@@ -24,57 +24,13 @@
     ci,
   }:
     flake-utils.lib.eachSystem (builtins.filter (s: builtins.match ".*-linux" s != null) flake-utils.lib.defaultSystems) (system: let
-      pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = nixpkgs.legacyPackages.${system}.extend self.overlays.default;
       inherit (pkgs) lib;
       craneLib = crane.mkLib pkgs;
 
-      src = craneLib.cleanCargoSource ./.;
-
-      common-args = {
-        inherit src;
-        strictDeps = true;
-
-        nativeBuildInputs = [pkgs.installShellFiles];
-
-        postInstall = ''
-          installShellCompletion --cmd vim-niri-nav \
-            --bash ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.bash \
-            --fish ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.fish \
-            --zsh ./target/release/build/vim-niri-nav-*/out/_vim-niri-nav
-          installManPage ./target/release/build/vim-niri-nav-*/out/vim-niri-nav.1
-        '';
-      };
-
-      cargoArtifacts = craneLib.buildDepsOnly common-args;
-
-      bin = craneLib.buildPackage (common-args
-        // {
-          inherit cargoArtifacts;
-        });
-
-      plugin = pkgs.vimUtils.buildVimPlugin {
-        pname = "vim-niri-nav-plugin";
-        version = "unstable";
-        src = lib.fileset.toSource {
-          root = ./.;
-          fileset = lib.fileset.unions [
-            ./plugin
-          ];
-        };
-        meta = {
-          homepage = "https://github.com/lyndeno/vim-niri-nav";
-          hydraPlatforms = [];
-        };
-      };
-
-      vim-niri-nav = pkgs.symlinkJoin {
-        name = "vim-niri-nav-combined";
-        meta.mainProgram = "vim-niri-nav";
-        paths = [
-          plugin
-          bin
-        ];
-      };
+      bin = pkgs.vim-niri-nav-bin;
+      plugin = pkgs.vim-niri-nav-plugin;
+      vim-niri-nav = pkgs.vim-niri-nav;
 
       pre-commit-check = hooks:
         pre-commit-hooks-nix.lib.${system}.run {
@@ -97,40 +53,28 @@
         };
       };
 
-      checks = {
-        inherit bin;
+      checks =
+        {
+          inherit bin;
+        }
+        // bin.passthru.tests
+        // {
+          pre-commit-check = pre-commit-check {
+            alejandra.enable = true;
+          };
 
-        vim-niri-nav-clippy = craneLib.cargoClippy (common-args
-          // {
-            inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
-          });
+          hydra-spec = ci.lib.mkHydraCheck {
+            inherit pkgs;
+            specPackage = self.packages.${system}.hydra-spec;
+            specFile = ./.hydra/spec.json;
+          };
 
-        vim-niri-nav-fmt = craneLib.cargoFmt {
-          inherit src;
+          mergify-check = ci.lib.mkMergifyCheck {
+            inherit pkgs;
+            mergifyPackage = self.packages.${system}.mergify;
+            mergifyFile = ./.mergify.yml;
+          };
         };
-
-        vim-niri-nav-test = craneLib.cargoTest (common-args
-          // {
-            inherit cargoArtifacts;
-          });
-
-        pre-commit-check = pre-commit-check {
-          alejandra.enable = true;
-        };
-
-        hydra-spec = ci.lib.mkHydraCheck {
-          inherit pkgs;
-          specPackage = self.packages.${system}.hydra-spec;
-          specFile = ./.hydra/spec.json;
-        };
-
-        mergify-check = ci.lib.mkMergifyCheck {
-          inherit pkgs;
-          mergifyPackage = self.packages.${system}.mergify;
-          mergifyFile = ./.mergify.yml;
-        };
-      };
 
       devShells.default = let
         hooks = pre-commit-check {
@@ -149,5 +93,14 @@
             ${hooks.shellHook}
           '';
         };
-    });
+    })
+    // {
+      overlays.default = final: _prev: let
+        craneLib = crane.mkLib final;
+      in {
+        vim-niri-nav-bin = final.callPackage ./nix/packages/bin.nix {inherit craneLib;};
+        vim-niri-nav-plugin = final.callPackage ./nix/packages/plugin.nix {};
+        vim-niri-nav = final.callPackage ./nix/packages/vim-niri-nav.nix {};
+      };
+    };
 }
